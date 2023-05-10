@@ -1,10 +1,10 @@
-#tensorinjo = "C:/Users/jcvetko/Desktop/stuff/python/tensorflow-2.11.0-cp38-cp38-win_amd64.whl"
-#rdkitinjo = "C:/Users/jcvetko/Desktop/stuff/python/rdkit_pypi-2022.9.5-cp38-cp38-win_amd64.whl"
-#stelargrfinjo = "C:/Users/jcvetko/Desktop/stuff/python/stellargraph-1.2.1-py3-none-any.whl"
-
-#import pip
-
-#def install_whl(path):
+# tensorinjo = "tensorflow-2.11.0-cp38-cp38-win_amd64.whl"
+# rdkitinjo = "rdkit_pypi-2022.9.5-cp38-cp38-win_amd64.whl"
+# stelargrfinjo = "stellargraph-1.2.1-py3-none-any.whl"
+#
+# import pip
+#
+# def install_whl(path):
 #    pip.main(['install', path])
 
 #install_whl(tensorinjo)
@@ -50,7 +50,7 @@ import numpy as np
 import pandas as pd
 
 
-filepath_raw = 'C:/Users/jcvetko/PycharmProjects/proba/avpdb_smiles.xlsx'
+filepath_raw = 'avpdb_smiles.xlsx'
 data_file = pd.read_excel(filepath_raw, header=0, usecols=["smiles", "label"])
 
 
@@ -173,11 +173,11 @@ from tensorflow.keras.callbacks import LambdaCallback
 from tensorflow.keras.utils import Sequence
 
 
-epochs = 1000
+epochs = 10000
 
 # Define the number of rows for the output tensor and the layer sizes
-k = 30
-layer_sizes = [30, 30, 30, 1]
+k = 35
+layer_sizes = [32, 32, 32, 1]
 
 # Create the DeepGraphCNN model
 dgcnn_model = DeepGraphCNN(
@@ -204,6 +204,48 @@ predictions = Dense(units=1, activation="sigmoid")(x_out)
 # Create the model and compile it
 model = Model(inputs=x_inp, outputs=predictions)
 
+from sklearn.metrics import confusion_matrix, precision_score, recall_score, roc_auc_score
+import tensorflow.keras.backend as K
+
+gm_values = []
+precision_values = []
+recall_values = []
+f1_values = []
+roc_auc_values = []
+
+
+# Define evaluation metrics
+def metrics(y_true, y_pred):
+    y_pred = K.cast(K.round(y_pred), K.floatx())
+    y_true = K.cast(y_true, K.floatx())
+
+    y_pred_np = K.eval(y_pred)  # Convert y_pred tensor to NumPy array
+
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred_np).ravel()
+    tpr = K.variable(tp / (tp + fn + K.epsilon()))
+    tnr = K.variable(tn / (tn + fp + K.epsilon()))
+    gm = K.sqrt(tpr * tnr)
+    precision = precision_score(y_true, y_pred_np)
+    recall = recall_score(y_true, y_pred_np)
+    f1 = 2 * (precision * recall) / (precision + recall + K.epsilon())
+    roc_auc = roc_auc_score(y_true, y_pred_np)
+
+    print("GM: ", gm)
+    print("Precision: ", precision)
+    print("Recall: ", recall)
+    print("F1: ", f1)
+    print("ROC AUC: ", roc_auc)
+
+    gm_values.append(K.get_value(gm))
+    precision_values.append(K.get_value(precision))
+    recall_values.append(K.get_value(recall))
+    f1_values.append(K.get_value(f1))
+    roc_auc_values.append(K.get_value(roc_auc))
+
+
+restOfMetrics_callback = LambdaCallback(on_epoch_end=lambda epoch, logs: metrics(test_gen.targets, model.predict(test_gen)))
+
+
 
 mcc_values = []
 
@@ -217,7 +259,7 @@ def mcc_metric(y_true, y_pred):
     mcc_values.append(mcc)
 
 mcc_callback = LambdaCallback(on_epoch_end=lambda epoch, logs: mcc_metric(test_gen.targets, model.predict(test_gen)))
-callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=15)
+callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=12)
 
 model.compile(
     optimizer=Adam(lr=0.0001),
@@ -225,10 +267,24 @@ model.compile(
     metrics=["acc"]
 )
 
+# Add evaluation metrics to the model
+model.metrics_names.append('mcc')
+model.metrics_names.append('tpr')
+model.metrics_names.append('tnr')
+model.metrics_names.append('gm')
+model.metrics_names.append('precision')
+model.metrics_names.append('recall')
+model.metrics_names.append('f1')
+model.metrics_names.append('roc_auc')
+
+imageCounter = 0
+metrics_dir = "plotHistory 444-598 split with k35 [32,32,32,1]_newMetrics/"
+
+
 
 cv = StratifiedKFold(n_splits=5, shuffle=True)
 
-
+import matplotlib.pyplot as plt
 import numpy as np
 
 histories = []
@@ -266,8 +322,56 @@ for train_index, test_index in cv.split(graphs, graph_labels):
 
     # Train the model and evaluate on the test set
     history = model.fit(
-        train_gen, epochs=epochs, verbose=1, validation_data=val_gen, shuffle=True, callbacks=[mcc_callback, callback]
+        train_gen, epochs=epochs, verbose=1, validation_data=val_gen, shuffle=True, callbacks=[mcc_callback, callback, restOfMetrics_callback]
     )
+
+    imageCounter += 1;
+
+    # Create ROC AUC plot
+    plt.figure()
+    plt.plot(range(len(roc_auc_values)), roc_auc_values)
+    plt.xlabel('Epoch')
+    plt.ylabel('ROC AUC')
+    plt.title('ROC AUC over Epochs')
+    plt.savefig('graphs/' + metrics_dir + 'roc_auc_plot_'+ str(imageCounter) +'.png')
+
+    # Create F1 plot
+    plt.figure()
+    plt.plot(range(len(f1_values)), f1_values)
+    plt.xlabel('Epochs')
+    plt.ylabel('F1 Score')
+    plt.title('F1 Score over Epochs')
+    plt.savefig('graphs/' + metrics_dir + 'f1_plot_'+ str(imageCounter) +'.png')
+
+    # Create GM plot
+    plt.figure()
+    plt.plot(range(len(gm_values)), gm_values)
+    plt.xlabel('Epochs')
+    plt.ylabel('G-Measure')
+    plt.title('G-Measure over Epochs')
+    plt.savefig('graphs/' + metrics_dir + 'gm_plot_'+ str(imageCounter) +'.png')
+
+    # Create Precision plot
+    plt.figure()
+    plt.plot(range(len(precision_values)), precision_values)
+    plt.xlabel('Epochs')
+    plt.ylabel('Precision')
+    plt.title('Precision over Epochs')
+    plt.savefig('graphs/' + metrics_dir + 'precision_plot_'+ str(imageCounter) +'.png')
+
+    # Create Recall plot
+    plt.figure()
+    plt.plot(range(len(recall_values)), recall_values)
+    plt.xlabel('Epochs')
+    plt.ylabel('Recall')
+    plt.title('Recall over Epochs')
+    plt.savefig('graphs/' + metrics_dir + 'recall_plot_'+ str(imageCounter) +'.png')
+
+    gm_values.clear()
+    precision_values.clear()
+    recall_values.clear()
+    f1_values.clear()
+    roc_auc_values.clear()
 
     histories.append(history)
 
@@ -286,12 +390,16 @@ import os
 import matplotlib.pyplot as plt
 import stellargraph as sg
 
-save_dir = r"C:\Users\jcvetko\Desktop\stuff\school\6. semestar\Zavrsni rad\plotHistory 444-598 split with k30 [30,30,30,1]"
+#save_dir = r"C:\Users\jcvetko\Desktop\stuff\school\6. semestar\Zavrsni rad\plotHistory 444-598 split with k30 [30,30,30,1]"
+save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\plotHistory 444-598 split with k35 [32,32,32,1]_history"
 
 for i, history in enumerate(histories):
     fig = sg.utils.plot_history(history, individual_figsize=(7, 4), return_figure=True)
     fig.savefig(os.path.join(save_dir, f"history_{i}.png"))
     plt.close(fig)
+
+
+
 
 
 test_metrics = model.evaluate(test_gen)
