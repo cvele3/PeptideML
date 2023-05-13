@@ -164,7 +164,7 @@ generator = PaddedGraphGenerator(graphs=graphs)
 
 import numpy as np
 from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import matthews_corrcoef
+from sklearn.metrics import matthews_corrcoef, precision_recall_curve
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.losses import binary_crossentropy
 from tensorflow.keras.models import Model
@@ -173,7 +173,7 @@ from tensorflow.keras.callbacks import LambdaCallback
 from tensorflow.keras.utils import Sequence
 
 
-epochs = 10000
+epochs = 1000
 
 # Define the number of rows for the output tensor and the layer sizes
 k = 35
@@ -204,7 +204,7 @@ predictions = Dense(units=1, activation="sigmoid")(x_out)
 # Create the model and compile it
 model = Model(inputs=x_inp, outputs=predictions)
 
-from sklearn.metrics import confusion_matrix, precision_score, recall_score, roc_auc_score
+from sklearn.metrics import confusion_matrix, precision_score, recall_score, roc_auc_score, roc_curve, f1_score
 import tensorflow.keras.backend as K
 
 gm_values = []
@@ -212,6 +212,8 @@ precision_values = []
 recall_values = []
 f1_values = []
 roc_auc_values = []
+fpr_values = []
+tpr_values = []
 
 
 # Define evaluation metrics
@@ -222,6 +224,7 @@ def metrics(y_true, y_pred):
     y_pred_np = K.eval(y_pred)  # Convert y_pred tensor to NumPy array
 
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred_np).ravel()
+    fpr = K.variable(fp / (fp + tn + K.epsilon()))
     tpr = K.variable(tp / (tp + fn + K.epsilon()))
     tnr = K.variable(tn / (tn + fp + K.epsilon()))
     gm = K.sqrt(tpr * tnr)
@@ -229,6 +232,7 @@ def metrics(y_true, y_pred):
     recall = recall_score(y_true, y_pred_np)
     f1 = 2 * (precision * recall) / (precision + recall + K.epsilon())
     roc_auc = roc_auc_score(y_true, y_pred_np)
+
 
     print("GM: ", gm)
     print("Precision: ", precision)
@@ -241,6 +245,8 @@ def metrics(y_true, y_pred):
     recall_values.append(K.get_value(recall))
     f1_values.append(K.get_value(f1))
     roc_auc_values.append(K.get_value(roc_auc))
+    fpr_values.append(K.get_value(fpr))
+    tpr_values.append(K.get_value(tpr))
 
 
 restOfMetrics_callback = LambdaCallback(on_epoch_end=lambda epoch, logs: metrics(test_gen.targets, model.predict(test_gen)))
@@ -279,6 +285,7 @@ model.metrics_names.append('roc_auc')
 
 imageCounter = 0
 metrics_dir = "plotHistory 444-598 split with k35 [32,32,32,1]_newMetrics/"
+metrics_dir = "testDir/"
 
 
 
@@ -327,51 +334,13 @@ for train_index, test_index in cv.split(graphs, graph_labels):
 
     imageCounter += 1;
 
-    # Create ROC AUC plot
-    plt.figure()
-    plt.plot(range(len(roc_auc_values)), roc_auc_values)
-    plt.xlabel('Epoch')
-    plt.ylabel('ROC AUC')
-    plt.title('ROC AUC over Epochs')
-    plt.savefig('graphs/' + metrics_dir + 'roc_auc_plot_'+ str(imageCounter) +'.png')
-
-    # Create F1 plot
-    plt.figure()
-    plt.plot(range(len(f1_values)), f1_values)
-    plt.xlabel('Epochs')
-    plt.ylabel('F1 Score')
-    plt.title('F1 Score over Epochs')
-    plt.savefig('graphs/' + metrics_dir + 'f1_plot_'+ str(imageCounter) +'.png')
-
-    # Create GM plot
-    plt.figure()
-    plt.plot(range(len(gm_values)), gm_values)
-    plt.xlabel('Epochs')
-    plt.ylabel('G-Measure')
-    plt.title('G-Measure over Epochs')
-    plt.savefig('graphs/' + metrics_dir + 'gm_plot_'+ str(imageCounter) +'.png')
-
-    # Create Precision plot
-    plt.figure()
-    plt.plot(range(len(precision_values)), precision_values)
-    plt.xlabel('Epochs')
-    plt.ylabel('Precision')
-    plt.title('Precision over Epochs')
-    plt.savefig('graphs/' + metrics_dir + 'precision_plot_'+ str(imageCounter) +'.png')
-
-    # Create Recall plot
-    plt.figure()
-    plt.plot(range(len(recall_values)), recall_values)
-    plt.xlabel('Epochs')
-    plt.ylabel('Recall')
-    plt.title('Recall over Epochs')
-    plt.savefig('graphs/' + metrics_dir + 'recall_plot_'+ str(imageCounter) +'.png')
-
     gm_values.clear()
     precision_values.clear()
     recall_values.clear()
     f1_values.clear()
     roc_auc_values.clear()
+    tpr_values.clear()
+    fpr_values.clear()
 
     histories.append(history)
 
@@ -381,6 +350,43 @@ for train_index, test_index in cv.split(graphs, graph_labels):
 
     y_test = y_test.to_numpy()
     y_test = np.reshape(y_test, (-1,))
+
+    y_test2 = y_test[:209]
+    y_pred2 = y_pred[:209]
+
+    # create ROC curve
+    plt.figure()
+    fpr, tpr, _ = roc_curve(y_test, y_pred)
+    plt.plot(fpr, tpr)
+    plt.ylabel('True Positive Rate')
+    plt.xlabel('False Positive Rate')
+    plt.title("ROC curve");
+    plt.savefig('graphs/' + metrics_dir + 'roc_curve' + str(imageCounter) + '.png')
+
+    # Create precision-recall curve
+    plt.figure()
+    precision, recall, thresholds = precision_recall_curve(y_test2, y_pred2)
+    f1 = f1_score(y_test, y_pred)
+    plt.plot(recall, precision)
+    plt.ylabel("Precision")
+    plt.xlabel("Recall")
+    plt.title("Precision-Recall curve")
+    plt.text(0.05, 0.05, f'F1 Score: {f1:.2f}', transform=plt.gca().transAxes, va='bottom', ha='left')
+    plt.savefig('graphs/' + metrics_dir + 'precision_recall_curve' + str(imageCounter) + '.png')
+
+
+
+
+    del fpr, tpr, precision, recall, thresholds
+
+    # create f1 curve
+    # f1 = f1_score(y_test, y_pred)
+    # plt.plot(thresholds, f1)
+    # plt.ylabel('F1 score')
+    # plt.xlabel('thresholds')
+    # plt.title("F1 score curve");
+    # plt.savefig('graphs/' + metrics_dir + 'f1_curve' + str(imageCounter) + '.png')
+
     mcc_metric(y_test, y_pred)
     # returnMCC = mcc_metric(y_test, y_pred)
     # mcc_values.append(returnMCC)
@@ -392,6 +398,7 @@ import stellargraph as sg
 
 #save_dir = r"C:\Users\jcvetko\Desktop\stuff\school\6. semestar\Zavrsni rad\plotHistory 444-598 split with k30 [30,30,30,1]"
 save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\plotHistory 444-598 split with k35 [32,32,32,1]_history"
+save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\testDir"
 
 for i, history in enumerate(histories):
     fig = sg.utils.plot_history(history, individual_figsize=(7, 4), return_figure=True)
