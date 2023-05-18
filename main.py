@@ -6,6 +6,7 @@
 #
 # def install_whl(path):
 #    pip.main(['install', path])
+import math
 
 #install_whl(tensorinjo)
 #install_whl(rdkitinjo)
@@ -158,8 +159,7 @@ graph_labels = pd.Series(labels)
 
 print(graph_labels.value_counts().to_frame())
 
-graph_labels = pd.get_dummies(graph_labels, drop_first=True)
-
+#graph_labels = pd.get_dummies(graph_labels, drop_first=True)
 generator = PaddedGraphGenerator(graphs=graphs)
 
 import numpy as np
@@ -173,7 +173,7 @@ from tensorflow.keras.callbacks import LambdaCallback
 from tensorflow.keras.utils import Sequence
 
 
-epochs = 1000
+epochs = 10000
 
 # Define the number of rows for the output tensor and the layer sizes
 k = 35
@@ -189,10 +189,10 @@ dgcnn_model = DeepGraphCNN(
 )
 x_inp, x_out = dgcnn_model.in_out_tensors()
 
-x_out = Conv1D(filters=16, kernel_size=sum(layer_sizes), strides=sum(layer_sizes))(x_out)
+x_out = Conv1D(filters=32, kernel_size=sum(layer_sizes), strides=sum(layer_sizes))(x_out)
 x_out = MaxPool1D(pool_size=2)(x_out)
 
-x_out = Conv1D(filters=32, kernel_size=5, strides=1)(x_out)
+x_out = Conv1D(filters=64, kernel_size=5, strides=1)(x_out)
 
 x_out = Flatten()(x_out)
 
@@ -216,35 +216,50 @@ fpr_values = []
 tpr_values = []
 
 
-# Define evaluation metrics
-def metrics(y_true, y_pred):
+def roc_auc_metric(y_true, y_pred):
+    y_pred = K.cast(K.round(y_pred), K.floatx())
+    y_true = K.cast(y_true, K.floatx())
+
+    y_pred_np = K.eval(y_pred)  # Convert y_pred tensor to NumPy array
+
+    roc_auc = roc_auc_score(y_true, y_pred)
+    print("ROC AUC: ", roc_auc)
+    roc_auc_values.append(K.get_value(roc_auc))
+
+def rest_of_metrics(y_true, y_pred):
     y_pred = K.cast(K.round(y_pred), K.floatx())
     y_true = K.cast(y_true, K.floatx())
 
     y_pred_np = K.eval(y_pred)  # Convert y_pred tensor to NumPy array
 
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred_np).ravel()
-    fpr = K.variable(fp / (fp + tn + K.epsilon()))
-    tpr = K.variable(tp / (tp + fn + K.epsilon()))
-    tnr = K.variable(tn / (tn + fp + K.epsilon()))
-    gm = K.sqrt(tpr * tnr)
-    precision = precision_score(y_true, y_pred_np)
-    recall = recall_score(y_true, y_pred_np)
-    f1 = 2 * (precision * recall) / (precision + recall + K.epsilon())
-    roc_auc = roc_auc_score(y_true, y_pred_np)
+    # fpr = K.variable(fp / (fp + tn + K.epsilon()))
+    # tpr = K.variable(tp / (tp + fn + K.epsilon()))
+    # tnr = K.variable(tn / (tn + fp + K.epsilon()))
+    # gm = K.sqrt(tpr * tnr)
+    # precision = precision_score(y_true, y_pred_np)
+    # recall = recall_score(y_true, y_pred_np)
+    # f1 = 2 * (precision * recall) / (precision + recall + K.epsilon())
+    # roc_auc = roc_auc_score(y_true, y_pred_np)
+
+    fpr = fp / (fp + tn)
+    tpr = tp / (tp + fn)
+    tnr = tn / (tn + fp)
+    gm = math.sqrt(tpr * tnr)
+    precision = precision_score(y_true, y_pred)
+    recall = recall_score(y_true, y_pred)
+    f1 = f1_score(y_true, y_pred)
 
 
     print("GM: ", gm)
     print("Precision: ", precision)
     print("Recall: ", recall)
     print("F1: ", f1)
-    print("ROC AUC: ", roc_auc)
 
     gm_values.append(K.get_value(gm))
     precision_values.append(K.get_value(precision))
     recall_values.append(K.get_value(recall))
     f1_values.append(K.get_value(f1))
-    roc_auc_values.append(K.get_value(roc_auc))
     fpr_values.append(K.get_value(fpr))
     tpr_values.append(K.get_value(tpr))
 
@@ -265,7 +280,7 @@ def mcc_metric(y_true, y_pred):
     mcc_values.append(mcc)
 
 mcc_callback = LambdaCallback(on_epoch_end=lambda epoch, logs: mcc_metric(test_gen.targets, model.predict(test_gen)))
-callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=12)
+callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)
 
 model.compile(
     optimizer=Adam(lr=0.0001),
@@ -274,18 +289,16 @@ model.compile(
 )
 
 # Add evaluation metrics to the model
-model.metrics_names.append('mcc')
-model.metrics_names.append('tpr')
-model.metrics_names.append('tnr')
-model.metrics_names.append('gm')
-model.metrics_names.append('precision')
-model.metrics_names.append('recall')
-model.metrics_names.append('f1')
-model.metrics_names.append('roc_auc')
+# model.metrics_names.append('mcc')
+# model.metrics_names.append('tpr')
+# model.metrics_names.append('tnr')
+# model.metrics_names.append('gm')
+# model.metrics_names.append('precision')
+# model.metrics_names.append('recall')
+# model.metrics_names.append('f1')
+# model.metrics_names.append('roc_auc')
 
-imageCounter = 0
-metrics_dir = "plotHistory 444-598 split with k35 [32,32,32,1]_newMetrics/"
-metrics_dir = "testDir/"
+
 
 
 
@@ -329,67 +342,22 @@ for train_index, test_index in cv.split(graphs, graph_labels):
 
     # Train the model and evaluate on the test set
     history = model.fit(
-        train_gen, epochs=epochs, verbose=1, validation_data=val_gen, shuffle=True, callbacks=[mcc_callback, callback, restOfMetrics_callback]
+        train_gen, epochs=epochs, verbose=1, validation_data=val_gen, shuffle=True, callbacks=[callback]
     )
 
-    imageCounter += 1;
-
-    gm_values.clear()
-    precision_values.clear()
-    recall_values.clear()
-    f1_values.clear()
-    roc_auc_values.clear()
-    tpr_values.clear()
-    fpr_values.clear()
 
     histories.append(history)
 
     y_pred = model.predict(test_gen)
     y_pred = np.reshape(y_pred, (-1,))
+    roc_auc_metric(y_test, y_pred)
     y_pred = [0 if prob < 0.5 else 1 for prob in y_pred]
 
     y_test = y_test.to_numpy()
     y_test = np.reshape(y_test, (-1,))
 
-    y_test2 = y_test[:209]
-    y_pred2 = y_pred[:209]
-
-    # create ROC curve
-    plt.figure()
-    fpr, tpr, _ = roc_curve(y_test, y_pred)
-    plt.plot(fpr, tpr)
-    plt.ylabel('True Positive Rate')
-    plt.xlabel('False Positive Rate')
-    plt.title("ROC curve");
-    plt.savefig('graphs/' + metrics_dir + 'roc_curve' + str(imageCounter) + '.png')
-
-    # Create precision-recall curve
-    plt.figure()
-    precision, recall, thresholds = precision_recall_curve(y_test2, y_pred2)
-    f1 = f1_score(y_test, y_pred)
-    plt.plot(recall, precision)
-    plt.ylabel("Precision")
-    plt.xlabel("Recall")
-    plt.title("Precision-Recall curve")
-    plt.text(0.05, 0.05, f'F1 Score: {f1:.2f}', transform=plt.gca().transAxes, va='bottom', ha='left')
-    plt.savefig('graphs/' + metrics_dir + 'precision_recall_curve' + str(imageCounter) + '.png')
-
-
-
-
-    del fpr, tpr, precision, recall, thresholds
-
-    # create f1 curve
-    # f1 = f1_score(y_test, y_pred)
-    # plt.plot(thresholds, f1)
-    # plt.ylabel('F1 score')
-    # plt.xlabel('thresholds')
-    # plt.title("F1 score curve");
-    # plt.savefig('graphs/' + metrics_dir + 'f1_curve' + str(imageCounter) + '.png')
-
+    rest_of_metrics(y_test, y_pred)
     mcc_metric(y_test, y_pred)
-    # returnMCC = mcc_metric(y_test, y_pred)
-    # mcc_values.append(returnMCC)
 
 
 import os
@@ -397,8 +365,14 @@ import matplotlib.pyplot as plt
 import stellargraph as sg
 
 #save_dir = r"C:\Users\jcvetko\Desktop\stuff\school\6. semestar\Zavrsni rad\plotHistory 444-598 split with k30 [30,30,30,1]"
-save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\plotHistory 444-598 split with k35 [32,32,32,1]_history"
-save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\testDir"
+# save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\plotHistory 444-598 split with k35 [32,32,32,1]_history"
+# save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\testDir"
+
+save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\newMetrics\history\plotHistory 444-598 split with k35 [32,32,32,1] with 32- 64- 128"
+# save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\newMetrics\history\plotHistory 444-598 split with k35 [32,32,32,1] with 16 -32 -128"
+# save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\newMetrics\history\plotHistory 444-598 split with k30 [30,30,30,1] with 16 -32 -128"
+# save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\newMetrics\history\plotHistory 444-598 split with k25 [25,25,25,1] with 16 -32 -128"
+#save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\newMetrics\history\plotHistory 444-598 split with k25 [25,25,25,1] with 8 -16 -64"
 
 for i, history in enumerate(histories):
     fig = sg.utils.plot_history(history, individual_figsize=(7, 4), return_figure=True)
@@ -414,9 +388,32 @@ print("\nTest Set Metrics:")
 for name, val in zip(model.metrics_names, test_metrics):
     print("\t{}: {:0.4f}".format(name, val))
 
-print("AVG MCC: ")
-print(np.mean(mcc_values))
-print("MAX MCC: ")
-print(np.max(mcc_values))
-print("MIN MCC: ")
-print(np.min(mcc_values))
+# print("AVG MCC: ")
+# print(np.mean(mcc_values))
+# print("MAX MCC: ")
+# print(np.max(mcc_values))
+# print("MIN MCC: ")
+# print(np.min(mcc_values))
+
+# Create a dictionary with the data
+data = {
+    "Metric": ["MCC", "GM", "Precision", "Recall", "F1", "ROC AUC", "FPR", "TPR"],
+    "Average": [np.mean(mcc_values), np.mean(gm_values), np.mean(precision_values), np.mean(recall_values),
+                np.mean(f1_values), np.mean(roc_auc_values), np.mean(fpr_values), np.mean(tpr_values)],
+    "Maximum": [np.max(mcc_values), np.max(gm_values), np.max(precision_values), np.max(recall_values),
+                np.max(f1_values), np.max(roc_auc_values), np.max(fpr_values), np.max(tpr_values)],
+    "Minimum": [np.min(mcc_values), np.min(gm_values), np.min(precision_values), np.min(recall_values),
+                np.min(f1_values), np.min(roc_auc_values), np.min(fpr_values), np.min(tpr_values)]
+}
+
+# Create a pandas DataFrame from the dictionary
+df = pd.DataFrame(data)
+
+excel_save = "zavrsni/newMetrics/metrics/plotHistory 444-598 split with k35 [32,32,32,1] with 32- 64- 128/"
+# excel_save = "zavrsni/newMetrics/metrics/plotHistory 444-598 split with k35 [32,32,32,1] with 16 -32 -128/"
+# excel_save = "zavrsni/newMetrics/metrics/plotHistory 444-598 split with k30 [30,30,30,1] with 16 -32 -128/"
+# excel_save = "zavrsni/newMetrics/metrics/plotHistory 444-598 split with k25 [25,25,25,1] with 16 -32 -128/"
+# excel_save = "zavrsni/newMetrics/metrics/plotHistory 444-598 split with k25 [25,25,25,1] with 8 -16 -64/"
+
+# Save the DataFrame to an Excel file
+df.to_excel( excel_save + "metrics.xlsx", index=False)
