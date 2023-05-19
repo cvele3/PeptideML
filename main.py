@@ -176,8 +176,8 @@ from tensorflow.keras.utils import Sequence
 epochs = 10000
 
 # Define the number of rows for the output tensor and the layer sizes
-k = 35
-layer_sizes = [32, 32, 32, 1]
+k = 20
+layer_sizes = [15, 15, 15, 1]
 
 # Create the DeepGraphCNN model
 dgcnn_model = DeepGraphCNN(
@@ -368,11 +368,13 @@ import stellargraph as sg
 # save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\plotHistory 444-598 split with k35 [32,32,32,1]_history"
 # save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\testDir"
 
-save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\newMetrics\history\plotHistory 444-598 split with k35 [32,32,32,1] with 32- 64- 128"
+# save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\newMetrics\history\plotHistory 444-598 split with k35 [32,32,32,1] with 32- 64- 128"
 # save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\newMetrics\history\plotHistory 444-598 split with k35 [32,32,32,1] with 16 -32 -128"
 # save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\newMetrics\history\plotHistory 444-598 split with k30 [30,30,30,1] with 16 -32 -128"
 # save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\newMetrics\history\plotHistory 444-598 split with k25 [25,25,25,1] with 16 -32 -128"
-#save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\newMetrics\history\plotHistory 444-598 split with k25 [25,25,25,1] with 8 -16 -64"
+# save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\newMetrics\history\plotHistory 444-598 split with k25 [25,25,25,1] with 8 -16 -64"
+save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\newMetrics\history\plotHistory 444-598 split with k20 [15,15,15,1] with 8 -16 -64"
+# save_dir = r"C:\Users\legion\PycharmProjects\PeptideML\zavrsni\newMetrics\history\plotHistory 444-598 split with k15 [10,10,10,1] with 8 -16 -64"
 
 for i, history in enumerate(histories):
     fig = sg.utils.plot_history(history, individual_figsize=(7, 4), return_figure=True)
@@ -409,11 +411,13 @@ data = {
 # Create a pandas DataFrame from the dictionary
 df = pd.DataFrame(data)
 
-excel_save = "zavrsni/newMetrics/metrics/plotHistory 444-598 split with k35 [32,32,32,1] with 32- 64- 128/"
+# excel_save = "zavrsni/newMetrics/metrics/plotHistory 444-598 split with k35 [32,32,32,1] with 32- 64- 128/"
 # excel_save = "zavrsni/newMetrics/metrics/plotHistory 444-598 split with k35 [32,32,32,1] with 16 -32 -128/"
 # excel_save = "zavrsni/newMetrics/metrics/plotHistory 444-598 split with k30 [30,30,30,1] with 16 -32 -128/"
 # excel_save = "zavrsni/newMetrics/metrics/plotHistory 444-598 split with k25 [25,25,25,1] with 16 -32 -128/"
 # excel_save = "zavrsni/newMetrics/metrics/plotHistory 444-598 split with k25 [25,25,25,1] with 8 -16 -64/"
+excel_save = "zavrsni/newMetrics/metrics/plotHistory 444-598 split with k20 [15,15,15,1] with 8 -16 -64/"
+# excel_save = "zavrsni/newMetrics/metrics/plotHistory 444-598 split with k15 [10,10,10,1] with 8 -16 -64/"
 
 # Save the DataFrame to an Excel file
 df.to_excel( excel_save + "metrics.xlsx", index=False)
