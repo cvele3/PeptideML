@@ -176,8 +176,8 @@ from tensorflow.keras.utils import Sequence
 epochs = 10000
 
 # Define the number of rows for the output tensor and the layer sizes
-k = 20
-layer_sizes = [15, 15, 15, 1]
+k = 30
+layer_sizes = [30, 30, 30, 1]
 
 # Create the DeepGraphCNN model
 dgcnn_model = DeepGraphCNN(
@@ -302,7 +302,7 @@ model.compile(
 
 
 
-cv = StratifiedKFold(n_splits=5, shuffle=True)
+cv = StratifiedKFold(n_splits=10, shuffle=True)
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -322,7 +322,7 @@ for train_index, test_index in cv.split(graphs, graph_labels):
     train_gen = gen.flow(
         X_train,
         targets=y_train,
-        batch_size=50,
+        batch_size=32,
         symmetric_normalization=False,
     )
 
